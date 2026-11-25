@@ -32,7 +32,68 @@ function faixa(msg) {
   f.classList.toggle("escondida", !msg);
 }
 
+// ---------------------------------------------------------------- sons (gerados, sem arquivos)
+const Som = {
+  ligado: true, ctx: null,
+  iniciar() {
+    try { this.ligado = localStorage.getItem("som") !== "0"; } catch (e) { /* sem armazenamento */ }
+    this.botao();
+  },
+  botao() {
+    let b = $("#som");
+    if (!b) {
+      b = document.createElement("button");
+      b.id = "som";
+      b.className = "som";
+      b.addEventListener("click", (ev) => { ev.stopPropagation(); this.alternar(); });
+      document.body.appendChild(b);
+    }
+    b.textContent = this.ligado ? "🔊" : "🔇";
+    b.title = this.ligado ? "Desligar sons" : "Ligar sons";
+  },
+  alternar() {
+    this.ligado = !this.ligado;
+    try { localStorage.setItem("som", this.ligado ? "1" : "0"); } catch (e) { /* ok */ }
+    this.botao();
+    if (this.ligado) this.tocar("medium");
+  },
+  destravar() {
+    // O navegador só libera áudio depois de um toque na tela
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === "suspended") this.ctx.resume();
+    } catch (e) { this.ctx = null; }
+  },
+  nota(freq, ini, dur, tipo = "sine", vol = 0.12) {
+    const c = this.ctx, t = c.currentTime + ini;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = tipo;
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  },
+  tocar(tipo) {
+    if (!this.ligado || !this.ctx || this.ctx.state !== "running") return;
+    try {
+      const sons = {
+        light: () => this.nota(880, 0, 0.05, "triangle", 0.06),
+        medium: () => this.nota(660, 0, 0.08, "triangle", 0.09),
+        heavy: () => { this.nota(180, 0, 0.18, "square", 0.08); this.nota(120, 0.03, 0.2, "sine", 0.1); },
+        sucesso: () => { this.nota(660, 0, 0.12); this.nota(880, 0.1, 0.12); this.nota(1175, 0.2, 0.22); },
+        erro: () => { this.nota(220, 0, 0.14, "sawtooth", 0.06); this.nota(165, 0.12, 0.2, "sawtooth", 0.06); },
+        aviso: () => { this.nota(392, 0, 0.12, "triangle"); this.nota(330, 0.12, 0.16, "triangle"); },
+      };
+      (sons[tipo] || sons.light)();
+    } catch (e) { /* sem som */ }
+  },
+};
+
 function vibrar(tipo) {
+  Som.tocar(tipo || "light");
   try {
     const h = tg && tg.HapticFeedback;
     if (!h) return;
@@ -331,11 +392,12 @@ function telaBoasVindas() {
   S.demo = null;
   S.estado = null;
   faixa(null);
+  mostrarAssistindo(null);
   $("#app").innerHTML = `
     <div class="topo"><div><h1>Jogos</h1><small>Desafie alguém do grupo!</small></div><div class="chip">🎮</div></div>
     <div class="card vip">
       <h2>👑 Criar partidas é para usuários VIP</h2>
-      <p>Quem é VIP cria a partida no grupo com <b>/naval</b>, <b>/damas</b> ou <b>/memoria</b>. Não é VIP? Sem problema:
+      <p>Quem é VIP cria a partida no grupo com <b>/naval</b>, <b>/damas</b>, <b>/memoria</b> ou <b>/pontinhos</b>. Não é VIP? Sem problema:
         toque em <b>🎮 Abrir jogo</b> na mensagem da partida e entre para jogar!</p>
     </div>
     <div class="card">
@@ -372,7 +434,19 @@ function telaBoasVindas() {
         <button class="b" data-b="treino_memoria" data-modo="dificil">🔴 Difícil</button>
       </div>
     </div>
-    <div class="dica">⏱️ Ficou sem jogar (3 min na Batalha Naval, 5 min nas Damas, 2 min na Memória)? O adversário pode reivindicar a vitória.<br>
+    <div class="card">
+      <h2>🔲 Pontinhos</h2>
+      <p>• Na sua vez, ligue dois pontos vizinhos (de lado ou de cima a baixo).<br>
+         • <b>Fechou um quadradinho? É seu e você joga de novo.</b><br>
+         • Cuidado para não deixar o 3º lado de um quadradinho para o adversário!<br>
+         • Quem fechar mais quadradinhos vence.</p>
+      <div class="botoes">
+        <button class="b" data-b="treino_pontinhos" data-modo="pequeno">🟢 4x4</button>
+        <button class="b" data-b="treino_pontinhos" data-modo="medio">🟡 6x6</button>
+        <button class="b" data-b="treino_pontinhos" data-modo="grande">🔴 8x8</button>
+      </div>
+    </div>
+    <div class="dica">⏱️ Ficou muito tempo sem jogar? O adversário pode reivindicar a vitória.<br>
       O treino contra o robô não vale para o ranking.</div>`;
 }
 
@@ -399,6 +473,10 @@ function render() {
   if (!e) return;
   if (e.jogo === "damas") {
     $("#app").innerHTML = telaDamas(e);
+    return atualizarRelogio();
+  }
+  if (e.jogo === "pontinhos") {
+    $("#app").innerHTML = telaPontinhos(e);
     return atualizarRelogio();
   }
   if (e.jogo === "memoria") {
@@ -453,6 +531,8 @@ function receber(e) {
   } else if (e.jogo === "memoria") {
     if (!antes || antes.id !== e.id) MS.vistas = new Set();
     else feedbackMemoria(antes, e);
+  } else if (e.jogo === "pontinhos") {
+    if (antes && antes.id === e.id) feedbackPontinhos(antes, e);
   } else if (antes) {
     const t = e.ultimo_tiro;
     if (t && JSON.stringify(t) !== JSON.stringify(antes.ultimo_tiro)) {
@@ -477,6 +557,7 @@ function receber(e) {
   }
   if (e.fase !== "posicionando") S.editor = null;
   render();
+  mostrarAssistindo(e);
 
   // Revanche criada: todo mundo que está vendo esta partida vai para a nova
   if (e.proxima && (!antes || !antes.proxima)) {
@@ -484,6 +565,19 @@ function receber(e) {
     toast("🔁 Revanche começando!");
     setTimeout(() => irPara(e.proxima), 900);
   }
+}
+
+function mostrarAssistindo(e) {
+  let el = $("#assistindo");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "assistindo";
+    el.className = "assistindo escondida";
+    document.body.appendChild(el);
+  }
+  const n = (e && e.assistindo) || 0;
+  el.textContent = `👀 ${n} assistindo`;
+  el.classList.toggle("escondida", !n);
 }
 
 function irPara(id) {
@@ -595,6 +689,8 @@ function botao(nome, ds) {
       return DemoDamas.iniciar();
     case "treino_memoria":
       return DemoMemoria.iniciar(ds.modo);
+    case "treino_pontinhos":
+      return DemoPontinhos.iniciar(ds.modo);
     case "empate":
       return confirmar("Propor empate ao adversário?", () => enviar({ tipo: "empate" }));
     case "aceitar_empate":
@@ -608,7 +704,11 @@ function botao(nome, ds) {
   }
 }
 
+document.addEventListener("pointerdown", () => Som.destravar(), { passive: true });
+
 document.addEventListener("click", (ev) => {
+  const linhaP = ev.target.closest("[data-lt]");
+  if (linhaP && linhaP.closest(".ptab")) return tocarPontinhos(linhaP.dataset.lt, +linhaP.dataset.r, +linhaP.dataset.c);
   const carta = ev.target.closest(".carta");
   if (carta && carta.closest(".mtab")) return tocarMemoria(+carta.dataset.i);
   const casa = ev.target.closest(".dcasa");
@@ -967,7 +1067,7 @@ function precarregar(e) {
 function telaMemoria(e) {
   precarregar(e);
   const pack = e.pack ? ` · 🖼️ ${esc(e.pack.titulo)}` : "";
-  let h = `<div class="topo"><div><h1>Memória</h1><small>${esc(e.modo_nome)} · ${e.pares} pares${pack}</small></div><div class="chip">🧠 Memória</div></div>`;
+  let h = `<div class="topo"><div><h1>Memória</h1><small>${esc(e.modo_nome)} · ${2 * e.pares} cartas${pack}</small></div><div class="chip">🧠 Memória</div></div>`;
 
   if (e.fase === "aguardando") {
     h += `<div class="card centro"><div class="radar"><span></span></div><h2>Aguardando adversário</h2>`;
@@ -1193,6 +1293,219 @@ const DemoMemoria = {
   },
 };
 
+// ================================================================ PONTINHOS
+const CORES_J = ["#38bdf8", "#fb923c"];
+
+function desenharPontinhos(e, ativo) {
+  const n = e.tam, P = 100, M = 24, L = n * P + 2 * M;
+  const x = (c) => M + c * P, y = (r) => M + r * P;
+  const u = e.ultimo;
+  const fechadas = new Set(u ? u.fechou.map(([r, c]) => r + "," + c) : []);
+  let svg = `<svg class="ptab${ativo ? " ativo" : ""}" viewBox="0 0 ${L} ${L}" xmlns="http://www.w3.org/2000/svg">`;
+
+  // quadradinhos com dono
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const d = e.caixas[r][c];
+    if (d === null) continue;
+    const ini = esc((e.jogadores[d].nome || "?").trim().charAt(0).toUpperCase());
+    svg += `<rect class="caixa${fechadas.has(r + "," + c) ? " nova" : ""}" x="${x(c) + 6}" y="${y(r) + 6}" width="${P - 12}" height="${P - 12}" rx="10" fill="${CORES_J[d]}" />`;
+    svg += `<text class="inicial" x="${x(c) + P / 2}" y="${y(r) + P / 2}" >${ini}</text>`;
+  }
+
+  const linha = (t, r, c, x1, y1, x2, y2) => {
+    const dono = (t === "h" ? e.h : e.v)[r][c];
+    const ultima = u && u.t === t && u.r === r && u.c === c;
+    if (dono !== null) {
+      return `<line class="traco${ultima ? " ultima" : ""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${CORES_J[dono]}" />`;
+    }
+    let h = `<line class="vazia" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+    if (ativo) h += `<line class="alvo-linha" data-lt="${t}" data-r="${r}" data-c="${c}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+    return h;
+  };
+  for (let r = 0; r <= n; r++) for (let c = 0; c < n; c++) svg += linha("h", r, c, x(c), y(r), x(c + 1), y(r));
+  for (let r = 0; r < n; r++) for (let c = 0; c <= n; c++) svg += linha("v", r, c, x(c), y(r), x(c), y(r + 1));
+
+  for (let r = 0; r <= n; r++) for (let c = 0; c <= n; c++) svg += `<circle class="ponto-p" cx="${x(c)}" cy="${y(r)}" r="9" />`;
+  return svg + "</svg>";
+}
+
+function telaPontinhos(e) {
+  let h = `<div class="topo"><div><h1>Pontinhos</h1><small>${esc(e.modo_nome)} · ${e.tam}x${e.tam} quadradinhos</small></div><div class="chip">🔲 Pontinhos</div></div>`;
+
+  if (e.fase === "aguardando") {
+    h += `<div class="card centro"><div class="radar"><span></span></div><h2>Aguardando adversário</h2>`;
+    if (e.papel === "pode_entrar") {
+      h += `<p><b>${esc(e.jogadores[0].nome)}</b> está procurando alguém para jogar.</p></div>
+        <button class="b principal" data-b="entrar">🔲 Entrar na partida</button><div class="dica">Quem começa é sorteado.</div>`;
+    } else {
+      h += `<p>Quem tocar em <b>Abrir jogo</b> na mensagem da partida entra para jogar contra você.</p></div>`;
+    }
+    if (e.eu === 0) h += `<button class="b perigo" data-b="desistir">Cancelar partida</button>`;
+    return h;
+  }
+  if (e.fase === "cancelada") {
+    return h + `<div class="card centro"><div style="font-size:44px">❌</div><h2>Partida cancelada</h2>
+      <p>Crie outra com /pontinhos.</p></div><button class="b fino" data-b="fechar">Fechar</button>`;
+  }
+
+  const linhaJ = (i) => {
+    const vez = e.fase === "jogando" && e.vez === i ? " vez" : "";
+    let s = `<span class="ponto d${i}"></span> ${e.placar[i]} quadradinho(s)`;
+    if (e.fase === "fim" && e.vencedor === i) s = `🏆 Venceu · ${e.placar[i]}`;
+    return `<div class="jog${vez}${i === 1 ? " dir" : ""}"><div class="n">${nomeJog(e, i)}</div><div class="s">${s}</div></div>`;
+  };
+  h += `<div class="placar">${linhaJ(0)}<div class="vs">VS</div>${linhaJ(1)}</div>`;
+
+  const jogador = e.eu !== null;
+  const minha = jogador && e.fase === "jogando" && e.vez === e.eu;
+  if (e.fase === "jogando") {
+    if (!jogador) h += `<div class="status espera">👀 Assistindo · vez de ${esc(e.jogadores[e.vez].nome)}</div>`;
+    else if (minha) h += `<div class="status minha">🎯 Sua vez! Ligue dois pontos</div>`;
+    else h += `<div class="status espera">⏳ Vez de ${esc(e.jogadores[e.vez].nome)}</div>`;
+    const u = e.ultimo;
+    let ev = "";
+    if (u) {
+      const quem = u.por === e.eu ? "Você" : esc(e.jogadores[u.por].nome);
+      ev = u.fechou.length ? `✨ ${quem} fechou ${u.fechou.length} quadradinho(s) e joga de novo` : `✏️ ${quem} traçou uma linha`;
+    }
+    const total = e.tam * e.tam, livres = total - e.placar[0] - e.placar[1];
+    h += `<div class="evento">${ev}</div>`;
+    h += desenharPontinhos(e, minha && !S.enviando);
+    h += `<div class="dica">${livres} quadradinho(s) em disputa</div><div id="relogio"></div>`;
+    if (jogador) h += `<button class="b perigo" data-b="desistir">🏳️ Desistir</button>`;
+    return h;
+  }
+
+  let emoji = "🏆", titulo, cls = "";
+  if (e.vencedor === null) {
+    const empate = e.motivo === "empate_quadrados";
+    emoji = empate ? "🤝" : "💤"; titulo = empate ? "Empate" : "Partida encerrada";
+  } else if (e.eu === e.vencedor) { titulo = "Vitória!"; cls = "vitoria"; }
+  else if (e.eu !== null) { emoji = "💥"; titulo = "Derrota"; cls = "derrota"; }
+  else titulo = `${esc(e.jogadores[e.vencedor].nome)} venceu!`;
+  const perd = e.vencedor === null ? "" : esc(e.jogadores[1 - e.vencedor].nome);
+  const motivo = {
+    mais_quadrados: `Placar: ${Math.max(...e.placar)} × ${Math.min(...e.placar)} quadradinhos`,
+    empate_quadrados: `Os dois fecharam ${e.placar[0]} quadradinhos.`,
+    desistiu: `${perd} desistiu.`,
+    tempo: `${perd} ficou sem jogar.`,
+    abandonada: "Ninguém jogou por muito tempo.",
+  }[e.motivo] || "";
+  h += `<div class="card resultado ${cls}"><div class="emoji">${emoji}</div><h2>${titulo}</h2><p>${motivo}</p></div>`;
+  h += blocoRevanche(e);
+  h += desenharPontinhos(e, false);
+  return h + `<button class="b fino" data-b="fechar">Fechar</button>`;
+}
+
+function tocarPontinhos(t, r, c) {
+  const e = S.estado;
+  if (!e || e.jogo !== "pontinhos" || e.fase !== "jogando" || e.eu === null) return;
+  if (e.vez !== e.eu) return toast("Ainda não é a sua vez.");
+  if (S.enviando || (t === "h" ? e.h : e.v)[r][c] !== null) return;
+  S.enviando = true;
+  vibrar("light");
+  enviar({ tipo: "linha", t, r, c });
+}
+
+function feedbackPontinhos(antes, e) {
+  const u = e.ultimo;
+  if (u && JSON.stringify(u) !== JSON.stringify(antes.ultimo) && e.eu !== null) {
+    if (u.fechou.length) vibrar(u.por === e.eu ? "sucesso" : "aviso");
+  }
+  if (antes.fase !== e.fase) {
+    if (e.fase === "jogando") {
+      vibrar("sucesso");
+      toast(e.eu === null ? "🔲 A partida começou!" : e.vez === e.eu ? "🔲 Você começa!" : `🔲 ${e.jogadores[e.vez].nome} começa.`);
+    }
+    if (e.fase === "fim" && e.eu !== null) vibrar(e.vencedor === e.eu ? "sucesso" : e.vencedor === null ? "aviso" : "erro");
+  } else if (e.fase === "jogando" && antes.vez !== e.vez && e.vez === e.eu) {
+    vibrar("medium");
+  }
+}
+
+// ---------------------------------------------------------------- treino do pontinhos contra o robô
+const DemoPontinhos = {
+  iniciar(modo, revanche) {
+    const tamanhos = { pequeno: [4, "Pequeno"], medio: [6, "Médio"], grande: [8, "Grande"] };
+    this.modo = tamanhos[modo] ? modo : "pequeno";
+    [this.tam, this.nome] = tamanhos[this.modo];
+    const n = this.tam;
+    this.h = Array.from({ length: n + 1 }, () => Array(n).fill(null));
+    this.v = Array.from({ length: n }, () => Array(n + 1).fill(null));
+    this.caixas = Array.from({ length: n }, () => Array(n).fill(null));
+    this.jogadores = [{ nome: "Comandante" }, { nome: "Robô" }];
+    this.vez = revanche ? 1 - (this.primeiro || 0) : (Math.random() < 0.5 ? 0 : 1);
+    this.primeiro = this.vez;
+    this.fase = "jogando"; this.vencedor = null; this.motivo = null; this.ultimo = null;
+    this.revanche = []; this.proxima = null;
+    S.demo = this; S.estado = null;
+    faixa("Treino contra o robô · não vale para o ranking");
+    this.publicar();
+    if (this.vez === 1) this.roboJoga();
+  },
+  lados(r, c) {
+    return [this.h[r][c], this.h[r + 1][c], this.v[r][c], this.v[r][c + 1]].filter((x) => x !== null).length;
+  },
+  vizinhas(t, r, c) {
+    const n = this.tam, lista = t === "h" ? [[r - 1, c], [r, c]] : [[r, c - 1], [r, c]];
+    return lista.filter(([a, b]) => a >= 0 && b >= 0 && a < n && b < n);
+  },
+  livres() {
+    const n = this.tam, l = [];
+    for (let r = 0; r <= n; r++) for (let c = 0; c < n; c++) if (this.h[r][c] === null) l.push(["h", r, c]);
+    for (let r = 0; r < n; r++) for (let c = 0; c <= n; c++) if (this.v[r][c] === null) l.push(["v", r, c]);
+    return l;
+  },
+  placar() { return [0, 1].map((i) => this.caixas.flat().filter((d) => d === i).length); },
+  jogar(i, t, r, c) {
+    const g = t === "h" ? this.h : this.v;
+    if (this.fase !== "jogando" || this.vez !== i || g[r][c] !== null) return;
+    g[r][c] = i;
+    const fechou = this.vizinhas(t, r, c).filter(([a, b]) => this.caixas[a][b] === null && this.lados(a, b) === 4);
+    fechou.forEach(([a, b]) => (this.caixas[a][b] = i));
+    this.ultimo = { por: i, t, r, c, fechou };
+    if (this.caixas.flat().every((d) => d !== null)) {
+      const p = this.placar();
+      this.fase = "fim";
+      this.vencedor = p[0] === p[1] ? null : p[0] > p[1] ? 0 : 1;
+      this.motivo = p[0] === p[1] ? "empate_quadrados" : "mais_quadrados";
+    } else if (!fechou.length) {
+      this.vez = 1 - i;
+    }
+    this.publicar();
+    if (this.fase === "jogando" && this.vez === 1) this.roboJoga();
+  },
+  roboJoga() {
+    setTimeout(() => {
+      if (S.demo !== this || this.fase !== "jogando" || this.vez !== 1) return;
+      const livres = this.livres();
+      const sorteia = (l) => l[Math.floor(Math.random() * l.length)];
+      // 1) fecha quadradinho se puder; 2) linha que não entrega o 3º lado; 3) qualquer uma
+      const fecha = livres.filter(([t, r, c]) => this.vizinhas(t, r, c).some(([a, b]) => this.lados(a, b) === 3));
+      const segura = livres.filter(([t, r, c]) => this.vizinhas(t, r, c).every(([a, b]) => this.lados(a, b) < 2));
+      const [t, r, c] = sorteia(fecha.length ? fecha : segura.length ? segura : livres);
+      this.jogar(1, t, r, c);
+    }, 700);
+  },
+  receber(m) {
+    if (m.tipo === "linha") this.jogar(0, m.t, m.r, m.c);
+    else if (m.tipo === "desistir") { this.fase = "fim"; this.vencedor = 1; this.motivo = "desistiu"; this.publicar(); }
+    else if (m.tipo === "revanche") {
+      this.revanche = [0]; this.publicar();
+      setTimeout(() => { this.revanche = [0, 1]; this.proxima = "demo2"; this.publicar(); }, 1000);
+    }
+  },
+  publicar() {
+    receber({
+      jogo: "pontinhos", id: "demo-pontinhos", versao: Date.now() + Math.random(), agora: Date.now() / 1000,
+      modo: this.modo, modo_nome: this.nome, fase: this.fase, papel: "jogador", eu: 0,
+      jogadores: this.jogadores, vez: this.vez, vencedor: this.vencedor, motivo: this.motivo,
+      tam: this.tam, h: this.h, v: this.v, caixas: this.caixas, placar: this.placar(), ultimo: this.ultimo,
+      reivindicar_em: null, revanche: this.revanche, proxima: this.proxima, assistindo: 0,
+    });
+  },
+};
+
 // ---------------------------------------------------------------- conexão
 function lerParam() {
   const p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param)
@@ -1232,6 +1545,7 @@ function conectar() {
 }
 
 function iniciar() {
+  Som.iniciar();
   if (tg) {
     tg.ready();
     tg.expand();
