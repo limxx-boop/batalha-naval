@@ -318,18 +318,7 @@ function telaFim(e) {
 
   const ordem = e.eu === null ? [0, 1] : [e.eu, 1 - e.eu];
   let h = `<div class="card resultado ${cls}"><div class="emoji">${emoji}</div><h2>${titulo}</h2><p>${motivo}</p></div>`;
-  if (e.eu !== null && e.jogadores.length === 2 && !e.proxima) {
-    const op = esc(e.jogadores[1 - e.eu].nome);
-    const eu = e.revanche.includes(e.eu), ele = e.revanche.includes(1 - e.eu);
-    if (ele && !eu) {
-      h += `<div class="card centro destaque"><h2>🔁 ${op} quer revanche!</h2>
-        <button class="b principal verde" data-b="revanche">✅ Aceitar revanche</button></div>`;
-    } else if (eu) {
-      h += `<div class="card centro"><p>⏳ Esperando ${op} aceitar a revanche…</p></div>`;
-    } else {
-      h += `<button class="b principal" data-b="revanche">🔁 Pedir revanche</button><div class="dica"></div>`;
-    }
-  }
+  h += blocoRevanche(e);
   ordem.forEach((d) => {
     const tb = e.tabuleiros[d];
     h += `<div class="rotulo"><span>Frota de ${nomeJog(e, d)}</span><span>${tb.restantes} restante(s)</span></div>
@@ -340,30 +329,51 @@ function telaFim(e) {
 
 function telaBoasVindas() {
   S.demo = null;
+  S.estado = null;
   faixa(null);
   $("#app").innerHTML = `
-    <div class="topo"><div><h1>Batalha Naval</h1><small>Acertou, joga de novo!</small></div><div class="chip">⚓</div></div>
+    <div class="topo"><div><h1>Jogos</h1><small>Desafie alguém do grupo!</small></div><div class="chip">🎮</div></div>
     <div class="card vip">
       <h2>👑 Criar partidas é para usuários VIP</h2>
-      <p>Quem é VIP cria a partida no grupo com <b>/naval</b>. Não é VIP? Sem problema:
+      <p>Quem é VIP cria a partida no grupo com <b>/naval</b> ou <b>/damas</b>. Não é VIP? Sem problema:
         toque em <b>🎮 Abrir jogo</b> na mensagem da partida e entre para jogar!</p>
     </div>
     <div class="card">
-      <h2>📜 Como jogar</h2>
+      <h2>⚓ Batalha Naval</h2>
       <p>1. Posicione sua frota no mar (dá para sortear).<br>
          2. Na sua vez, toque no mar adversário para atirar.<br>
          3. <b>Acertou? Joga de novo.</b> Errou? Passa a vez.<br>
          4. Quem afundar todos os navios do outro primeiro vence.</p>
       <p><b>Frota clássica:</b> 5 navios (5, 4, 3, 3 e 2 casas), podem encostar.<br>
          <b>Frota brasileira:</b> 10 navios (5, 4, 3, 3, 2, 2, 1, 1, 1 e 1), com uma casa de água em volta.</p>
-      <p>⏱️ Ficou 3 minutos sem jogar? O adversário pode reivindicar a vitória.</p>
+      <div class="botoes dois">
+        <button class="b" data-b="treino" data-modo="classica">🤖 Treinar clássica</button>
+        <button class="b" data-b="treino" data-modo="brasileira">🤖 Treinar brasileira</button>
+      </div>
     </div>
-    <div class="rotulo"><span>Treinar contra o robô</span></div>
-    <div class="botoes dois">
-      <button class="b" data-b="treino" data-modo="classica">⚓ Clássica</button>
-      <button class="b" data-b="treino" data-modo="brasileira">🚢 Brasileira</button>
+    <div class="card">
+      <h2>♟️ Damas · regra brasileira</h2>
+      <p>• As brancas começam. A pedra anda 1 casa na diagonal para frente.<br>
+         • <b>Comer é obrigatório</b>, e vale o lance que come <b>mais peças</b>.<br>
+         • A pedra come para frente e para trás.<br>
+         • Chegou ao outro lado? Vira <b>dama ♛</b>, que anda e come à distância.<br>
+         • Empate por acordo ou com 20 lances seguidos só de damas, sem captura.</p>
+      <button class="b fino" data-b="treino_damas">🤖 Treinar damas</button>
     </div>
-    <div class="dica">O treino não vale para o ranking.</div>`;
+    <div class="dica">⏱️ Ficou sem jogar (3 min na Batalha Naval, 5 min nas Damas)? O adversário pode reivindicar a vitória.<br>
+      O treino contra o robô não vale para o ranking.</div>`;
+}
+
+function blocoRevanche(e) {
+  if (e.eu === null || e.jogadores.length !== 2 || e.proxima) return "";
+  const op = esc(e.jogadores[1 - e.eu].nome);
+  const eu = e.revanche.includes(e.eu), ele = e.revanche.includes(1 - e.eu);
+  if (ele && !eu) {
+    return `<div class="card centro destaque"><h2>🔁 ${op} quer revanche!</h2>
+      <button class="b principal verde" data-b="revanche">✅ Aceitar revanche</button></div>`;
+  }
+  if (eu) return `<div class="card centro"><p>⏳ Esperando ${op} aceitar a revanche…</p></div>`;
+  return `<button class="b principal" data-b="revanche">🔁 Pedir revanche</button><div class="dica"></div>`;
 }
 
 function telaErro(html) {
@@ -375,6 +385,10 @@ function telaErro(html) {
 function render() {
   const e = S.estado;
   if (!e) return;
+  if (e.jogo === "damas") {
+    $("#app").innerHTML = telaDamas(e);
+    return atualizarRelogio();
+  }
   let h = topo(e);
   if (e.fase === "aguardando") h += telaEspera(e);
   else if (e.fase === "cancelada") {
@@ -401,7 +415,7 @@ function atualizarRelogio() {
   const op = esc(e.jogadores[1 - e.eu].nome);
   if (resta > 0) {
     const m = Math.floor(resta / 60), s = String(resta % 60).padStart(2, "0");
-    const acao = e.fase === "batalha" ? "jogar" : "posicionar";
+    const acao = e.fase === "posicionando" ? "posicionar" : "jogar";
     el.innerHTML = `<div class="dica">⏱️ Se ${op} não ${acao} em ${m}:${s}, você pode reivindicar a vitória.</div>`;
   } else if (!el.querySelector("button")) {
     el.innerHTML = `<button class="b fino" data-b="reivindicar">🏳️ ${op} sumiu — reivindicar vitória</button><div class="dica"></div>`;
@@ -416,7 +430,10 @@ function receber(e) {
   S.recebidoEm = Date.now();
   S.enviando = false;
 
-  if (antes) {
+  if (e.jogo === "damas") {
+    if (!antes || antes.versao !== e.versao || antes.id !== e.id) { DS.sel = null; DS.parcial = []; }
+    if (antes && antes.id === e.id) feedbackDamas(antes, e);
+  } else if (antes) {
     const t = e.ultimo_tiro;
     if (t && JSON.stringify(t) !== JSON.stringify(antes.ultimo_tiro)) {
       if (t.por === e.eu) {
@@ -544,6 +561,7 @@ function botao(nome, ds) {
       return enviar({ tipo: "posicionar", navios: ed.pecas.map((p) => ({ x: p.pos.x, y: p.pos.y, h: p.pos.h })) });
     case "desistir": {
       const msg = e.fase === "aguardando" ? "Cancelar esta partida?" : "Desistir da partida? A vitória vai para o adversário.";
+      if (S.demo) return S.demo.receber({ tipo: "desistir" });
       return confirmar(msg, () => enviar({ tipo: "desistir" }));
     }
     case "reivindicar":
@@ -553,6 +571,14 @@ function botao(nome, ds) {
       return enviar({ tipo: "revanche" });
     case "treino":
       return Demo.iniciar(ds.modo);
+    case "treino_damas":
+      return DemoDamas.iniciar();
+    case "empate":
+      return confirmar("Propor empate ao adversário?", () => enviar({ tipo: "empate" }));
+    case "aceitar_empate":
+      return enviar({ tipo: "empate" });
+    case "recusar_empate":
+      return enviar({ tipo: "recusar_empate" });
     case "fechar":
       if (S.demo) return telaBoasVindas();
       if (tg && tg.initData) tg.close();
@@ -561,6 +587,8 @@ function botao(nome, ds) {
 }
 
 document.addEventListener("click", (ev) => {
+  const casa = ev.target.closest(".dcasa");
+  if (casa && casa.closest(".dtab")) return tocarDamas(+casa.dataset.x, +casa.dataset.y);
   const cel = ev.target.closest(".cel");
   const tab = ev.target.closest(".tab");
   if (cel && tab && tab.dataset.acao) {
@@ -569,6 +597,323 @@ document.addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-b]");
   if (b && !b.disabled) botao(b.dataset.b, b.dataset);
 });
+
+// ================================================================ DAMAS
+const DS = { sel: null, parcial: [] };   // peça escolhida e casas já tocadas
+const ICONE_COR = ["⚪", "⚫"];
+const NOME_COR = ["brancas", "pretas"];
+
+const corDe = (e, i) => (e.jogadores[i] ? e.jogadores[i].cor : null);
+const mesmaCasa = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
+const prefixo = (caminho, parcial) => parcial.every((c, i) => mesmaCasa(caminho[i], c));
+
+function placarDamas(e) {
+  const linha = (i) => {
+    const j = e.jogadores[i];
+    if (!j) return `<div class="jog"></div>`;
+    const [pd, dm] = e.pecas[j.cor];
+    let s = `${ICONE_COR[j.cor]} ${pd} pedra(s)${dm ? ` · ♛ ${dm}` : ""}`;
+    if (e.fase === "fim" && e.vencedor === i) s = "🏆 Venceu";
+    const vez = e.fase === "jogando" && e.vez === i ? " vez" : "";
+    return `<div class="jog${vez}${i === 1 ? " dir" : ""}"><div class="n">${nomeJog(e, i)}</div><div class="s">${s}</div></div>`;
+  };
+  return `<div class="placar">${linha(0)}<div class="vs">VS</div>${linha(1)}</div>`;
+}
+
+function desenharDamas(e, interativo) {
+  const minhaCor = e.eu !== null ? corDe(e, e.eu) : Damas.BRANCAS;
+  const virar = minhaCor === Damas.PRETAS;  // sua cor sempre embaixo
+  const t = e.tabuleiro;
+  const movs = interativo ? (e.movimentos || []) : [];
+  const podeMover = new Set(movs.map((m) => m.de.join(",")));
+  const selKey = DS.sel ? DS.sel.join(",") : null;
+
+  const alvos = new Set();
+  if (DS.sel) {
+    movs.filter((m) => mesmaCasa(m.de, DS.sel) && prefixo(m.caminho, DS.parcial))
+      .forEach((m) => { const prox = m.caminho[DS.parcial.length]; if (prox) alvos.add(prox.join(",")); });
+  }
+  const rastro = new Set(), comidas = new Set();
+  if (e.ultimo && !DS.sel) {
+    rastro.add(e.ultimo.de.join(","));
+    e.ultimo.caminho.forEach((c) => rastro.add(c.join(",")));
+    e.ultimo.capturas.forEach((c) => comidas.add(c.join(",")));
+  }
+  const passos = new Set(DS.parcial.map((c) => c.join(",")));
+  const fimParcial = DS.parcial.length ? DS.parcial[DS.parcial.length - 1] : null;
+
+  let h = `<div class="dtab${interativo ? " ativo" : ""}">`;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const x = virar ? 7 - c : c, y = virar ? 7 - r : r, k = x + "," + y;
+      const cls = ["dcasa", (x + y) % 2 ? "escura" : "clara"];
+      if (rastro.has(k)) cls.push("rastro");
+      if (passos.has(k)) cls.push("passo");
+      if (alvos.has(k)) cls.push("alvo");
+
+      // Durante uma captura em andamento, a peça aparece no último passo
+      let ch = t[y][x];
+      if (DS.sel && fimParcial) {
+        if (k === selKey) ch = ".";
+        if (mesmaCasa(fimParcial, [x, y])) ch = t[DS.sel[1]][DS.sel[0]];
+      }
+
+      let dentro = "";
+      if (c === 0) dentro += `<span class="rl">${8 - y}</span>`;
+      if (r === 7) dentro += `<span class="rc">${"abcdefgh"[x]}</span>`;
+      if (ch !== ".") {
+        const pc = ["pd", Damas.dono(ch) === Damas.BRANCAS ? "branca" : "preta"];
+        if (Damas.ehDama(ch)) pc.push("dama");
+        if (!DS.sel && podeMover.has(k)) pc.push("pode");
+        if (k === selKey || (fimParcial && mesmaCasa(fimParcial, [x, y]))) pc.push("selec");
+        dentro += `<div class="${pc.join(" ")}">${Damas.ehDama(ch) ? "♛" : ""}</div>`;
+      } else if (comidas.has(k)) {
+        dentro += `<div class="comida">✕</div>`;
+      }
+      h += `<div class="${cls.join(" ")}" data-x="${x}" data-y="${y}">${dentro}</div>`;
+    }
+  }
+  return h + "</div>";
+}
+
+function textoEventoDamas(e) {
+  const u = e.ultimo;
+  if (!u) return e.fase === "jogando" ? "As brancas começam." : "";
+  const quem = u.por === e.eu ? "Você" : esc(e.jogadores[u.por].nome);
+  const rota = [u.de].concat(u.caminho).map(([x, y]) => Damas.notacao(x, y)).join(u.capturas.length ? " ✕ " : " → ");
+  let t = u.capturas.length ? `💥 ${quem} comeu ${u.capturas.length} peça(s): ${rota}` : `♟️ ${quem}: ${rota}`;
+  if (u.virou_dama) t += " · virou dama ♛";
+  return t;
+}
+
+function telaDamas(e) {
+  let h = `<div class="topo"><div><h1>Damas</h1><small>Regra brasileira</small></div><div class="chip">♟️ Damas</div></div>`;
+
+  if (e.fase === "aguardando") {
+    h += `<div class="card centro"><div class="radar"><span></span></div><h2>Aguardando adversário</h2>`;
+    if (e.papel === "pode_entrar") {
+      h += `<p><b>${esc(e.jogadores[0].nome)}</b> está procurando alguém para jogar.</p></div>
+        <button class="b principal" data-b="entrar">♟️ Entrar na partida</button><div class="dica">As cores são sorteadas. As brancas começam.</div>`;
+    } else {
+      h += `<p>Quem tocar em <b>Abrir jogo</b> na mensagem da partida entra para jogar contra você.</p></div>
+        <div class="dica">As cores são sorteadas quando o adversário entrar.</div>`;
+    }
+    if (e.eu === 0) h += `<button class="b perigo" data-b="desistir">Cancelar partida</button>`;
+    return h;
+  }
+  if (e.fase === "cancelada") {
+    return h + `<div class="card centro"><div style="font-size:44px">❌</div><h2>Partida cancelada</h2>
+      <p>Crie outra com /damas.</p></div><button class="b fino" data-b="fechar">Fechar</button>`;
+  }
+
+  h += placarDamas(e);
+
+  if (e.fase === "jogando") {
+    const jogador = e.eu !== null;
+    const minha = jogador && e.vez === e.eu;
+    const captura = minha && e.movimentos.length && e.movimentos[0].capturas.length;
+    if (!jogador) {
+      h += `<div class="status espera">👀 Assistindo · vez das ${NOME_COR[corDe(e, e.vez)]}</div>`;
+    } else if (minha) {
+      h += `<div class="status minha">🎯 Sua vez! ${ICONE_COR[corDe(e, e.eu)]}${captura ? ` · Captura obrigatória (${captura})` : ""}</div>`;
+    } else {
+      h += `<div class="status espera">⏳ Vez de ${esc(e.jogadores[e.vez].nome)}</div>`;
+    }
+    h += `<div class="evento">${textoEventoDamas(e)}</div>`;
+
+    if (jogador && e.empate_proposto === 1 - e.eu) {
+      h += `<div class="card centro destaque"><h2>🤝 ${esc(e.jogadores[1 - e.eu].nome)} propôs empate</h2>
+        <div class="botoes dois"><button class="b verde" data-b="aceitar_empate">✅ Aceitar</button>
+        <button class="b" data-b="recusar_empate">❌ Recusar</button></div></div>`;
+    }
+
+    h += desenharDamas(e, minha && !S.enviando);
+    if (minha && DS.sel && DS.parcial.length) h += `<div class="dica">Continue: toque na próxima casa marcada. Toque na peça de origem para recomeçar.</div>`;
+    else if (minha && !DS.sel) h += `<div class="dica">Toque numa peça destacada e depois na casa de destino.</div>`;
+    if (e.lances_damas > 0) h += `<div class="dica">♛ ${e.lances_damas}/${e.limite_lances_damas} lances seguidos só de damas (empate em ${e.limite_lances_damas})</div>`;
+    h += `<div id="relogio"></div>`;
+    if (jogador) {
+      const propus = e.empate_proposto === e.eu;
+      h += `<div class="botoes dois">
+        <button class="b" data-b="empate"${propus ? " disabled" : ""}>${propus ? "🤝 Empate proposto" : "🤝 Propor empate"}</button>
+        <button class="b perigo" data-b="desistir" style="width:auto">🏳️ Desistir</button></div>`;
+    }
+    return h;
+  }
+
+  // FIM
+  let emoji = "🏆", titulo, cls = "";
+  if (e.vencedor === null) {
+    const empate = (e.motivo || "").startsWith("empate");
+    emoji = empate ? "🤝" : "💤"; titulo = empate ? "Empate" : "Partida encerrada";
+  } else if (e.eu === e.vencedor) {
+    titulo = "Vitória!"; cls = "vitoria";
+  } else if (e.eu !== null) {
+    emoji = "💥"; titulo = "Derrota"; cls = "derrota";
+  } else {
+    titulo = `${esc(e.jogadores[e.vencedor].nome)} venceu!`;
+  }
+  const perd = e.vencedor === null ? "" : esc(e.jogadores[1 - e.vencedor].nome);
+  const motivo = {
+    sem_pecas: "Todas as peças adversárias foram comidas.",
+    bloqueado: `${perd} ficou sem lances possíveis.`,
+    desistiu: `${perd} desistiu.`,
+    tempo: `${perd} ficou sem jogar.`,
+    empate_acordo: "Empate combinado entre os dois.",
+    empate_20: "20 lances seguidos só de damas, sem captura.",
+    abandonada: "Ninguém jogou por 30 minutos.",
+  }[e.motivo] || "";
+  h += `<div class="card resultado ${cls}"><div class="emoji">${emoji}</div><h2>${titulo}</h2><p>${motivo}</p></div>`;
+  h += blocoRevanche(e);
+  h += desenharDamas(e, false);
+  return h + `<button class="b fino" data-b="fechar">Fechar</button>`;
+}
+
+function tocarDamas(x, y) {
+  const e = S.estado;
+  if (!e || e.jogo !== "damas" || e.fase !== "jogando" || e.eu === null || e.vez !== e.eu || S.enviando) return;
+  const movs = e.movimentos || [];
+
+  if (DS.sel) {
+    // Tocou na peça de origem: recomeça (ou desmarca)
+    if (mesmaCasa(DS.sel, [x, y])) {
+      if (DS.parcial.length) DS.parcial = []; else DS.sel = null;
+      vibrar("light");
+      return render();
+    }
+    const cands = movs.filter((m) => mesmaCasa(m.de, DS.sel) && prefixo(m.caminho, DS.parcial));
+    const prox = cands.filter((m) => mesmaCasa(m.caminho[DS.parcial.length], [x, y]));
+    if (prox.length) {
+      DS.parcial = DS.parcial.concat([[x, y]]);
+      const completo = prox.find((m) => m.caminho.length === DS.parcial.length);
+      if (completo) {
+        S.enviando = true;
+        vibrar(completo.capturas.length ? "heavy" : "medium");
+        enviar({ tipo: "mover", de: completo.de, caminho: completo.caminho });
+      } else {
+        vibrar("light");
+      }
+      return render();
+    }
+    if (DS.parcial.length) {
+      vibrar("erro");
+      return toast("Continue comendo: toque numa casa marcada.");
+    }
+  }
+
+  if (movs.some((m) => mesmaCasa(m.de, [x, y]))) {
+    DS.sel = [x, y];
+    DS.parcial = [];
+    vibrar("light");
+    return render();
+  }
+  const ch = e.tabuleiro[y][x];
+  if (ch !== "." && Damas.dono(ch) === corDe(e, e.eu)) {
+    vibrar("erro");
+    if (movs.length && movs[0].capturas.length) toast(`Captura obrigatória: coma ${movs[0].capturas.length} peça(s) com uma peça destacada.`);
+    else toast("Essa peça não tem lance agora.");
+  }
+  DS.sel = null;
+  DS.parcial = [];
+  render();
+}
+
+function feedbackDamas(antes, e) {
+  const u = e.ultimo;
+  if (u && JSON.stringify(u) !== JSON.stringify(antes.ultimo) && u.por !== e.eu && e.eu !== null) {
+    vibrar(u.capturas.length ? "aviso" : "light");
+  }
+  if (antes.fase !== e.fase) {
+    if (e.fase === "jogando") {
+      vibrar("sucesso");
+      toast(e.eu === null ? "♟️ A partida começou!" :
+        `♟️ Você joga com as ${NOME_COR[corDe(e, e.eu)]} ${ICONE_COR[corDe(e, e.eu)]}`);
+    }
+    if (e.fase === "fim" && e.eu !== null) vibrar(e.vencedor === e.eu ? "sucesso" : e.vencedor === null ? "aviso" : "erro");
+  } else if (e.fase === "jogando" && antes.vez !== e.vez && e.vez === e.eu) {
+    vibrar("medium");
+  }
+  if (e.empate_proposto !== null && e.empate_proposto !== antes.empate_proposto && e.empate_proposto !== e.eu && e.eu !== null) {
+    toast("🤝 O adversário propôs empate");
+  }
+}
+
+// ---------------------------------------------------------------- treino de damas contra o robô
+const DemoDamas = {
+  iniciar(_modo, revanche) {
+    this.modo = "brasileira";
+    this.t = Damas.inicial();
+    const brancas = revanche && this.jogadores ? (this.jogadores[0].cor === 0 ? 1 : 0) : (Math.random() < 0.5 ? 0 : 1);
+    this.jogadores = [{ nome: "Comandante", cor: brancas === 0 ? 0 : 1 }, { nome: "Robô", cor: brancas === 0 ? 1 : 0 }];
+    this.vez = brancas;
+    this.fase = "jogando"; this.vencedor = null; this.motivo = null; this.ultimo = null;
+    this.lancesDamas = 0; this.empate = null; this.revanche = []; this.proxima = null;
+    S.demo = this; S.estado = null; DS.sel = null; DS.parcial = [];
+    faixa("Treino contra o robô · não vale para o ranking");
+    this.publicar();
+    if (this.vez === 1) this.roboJoga();
+  },
+  movs() { return this.fase === "jogando" ? Damas.movimentos(this.t, this.jogadores[this.vez].cor) : []; },
+  jogar(i, mov) {
+    const eraDama = Damas.ehDama(this.t[mov.de[1]][mov.de[0]]);
+    const virou = Damas.aplicar(this.t, mov);
+    this.ultimo = { por: i, de: mov.de, caminho: mov.caminho, capturas: mov.capturas, virou_dama: virou };
+    this.lancesDamas = eraDama && !mov.capturas.length ? this.lancesDamas + 1 : 0;
+    this.empate = null;
+    const adv = 1 - this.jogadores[i].cor;
+    const [pd, dm] = Damas.contar(this.t, adv);
+    if (pd + dm === 0) { this.fase = "fim"; this.vencedor = i; this.motivo = "sem_pecas"; }
+    else {
+      this.vez = 1 - i;
+      if (!this.movs().length) { this.fase = "fim"; this.vencedor = i; this.motivo = "bloqueado"; }
+      else if (this.lancesDamas >= 20) { this.fase = "fim"; this.vencedor = null; this.motivo = "empate_20"; }
+    }
+    this.publicar();
+    if (this.fase === "jogando" && this.vez === 1) this.roboJoga();
+  },
+  roboJoga() {
+    setTimeout(() => {
+      const ms = this.movs();
+      if (!ms.length) return;
+      // Prefere virar dama; fora isso, sorteia
+      const cor = this.jogadores[1].cor, ultima = cor === 0 ? 0 : 7;
+      const viram = ms.filter((m) => !Damas.ehDama(this.t[m.de[1]][m.de[0]]) && m.caminho[m.caminho.length - 1][1] === ultima);
+      const lista = viram.length ? viram : ms;
+      this.jogar(1, lista[Math.floor(Math.random() * lista.length)]);
+    }, 800);
+  },
+  receber(m) {
+    if (m.tipo === "mover") {
+      const mov = this.movs().find((x) => mesmaCasa(x.de, m.de) && JSON.stringify(x.caminho) === JSON.stringify(m.caminho));
+      if (mov && this.vez === 0) this.jogar(0, mov);
+    } else if (m.tipo === "empate") {
+      // O robô aceita empate se estiver perdendo em peças
+      const [a1, a2] = Damas.contar(this.t, this.jogadores[1].cor), [b1, b2] = Damas.contar(this.t, this.jogadores[0].cor);
+      if (a1 + 2 * a2 < b1 + 2 * b2) { this.fase = "fim"; this.vencedor = null; this.motivo = "empate_acordo"; }
+      else toast("🤖 O robô recusou o empate.");
+      this.publicar();
+    } else if (m.tipo === "desistir") {
+      this.fase = "fim"; this.vencedor = 1; this.motivo = "desistiu"; this.publicar();
+    } else if (m.tipo === "revanche") {
+      this.revanche = [0]; this.publicar();
+      setTimeout(() => { this.revanche = [0, 1]; this.proxima = "demo2"; this.publicar(); }, 1000);
+    }
+  },
+  publicar() {
+    receber({
+      jogo: "damas", id: "demo-damas", versao: Date.now() + Math.random(), agora: Date.now() / 1000,
+      modo: "brasileira", modo_nome: "Regra brasileira", fase: this.fase, papel: "jogador", eu: 0,
+      jogadores: this.jogadores.map((j) => ({ nome: j.nome, cor: j.cor })),
+      vez: this.vez, vencedor: this.vencedor, motivo: this.motivo,
+      tabuleiro: this.t.map((l) => l.join("")),
+      movimentos: this.vez === 0 ? this.movs() : [],
+      ultimo: this.ultimo,
+      pecas: [Damas.contar(this.t, 0), Damas.contar(this.t, 1)],
+      empate_proposto: this.empate, lances_damas: this.lancesDamas, limite_lances_damas: 20,
+      reivindicar_em: null, revanche: this.revanche, proxima: this.proxima,
+    });
+  },
+};
 
 // ---------------------------------------------------------------- conexão
 function lerParam() {
@@ -590,7 +935,11 @@ function conectar() {
     let d;
     try { d = JSON.parse(ev.data); } catch (e) { return; }
     if (d.tipo === "estado") receber(d.estado);
-    else if (d.tipo === "erro") { S.enviando = false; vibrar("erro"); toast(d.msg, "erro"); }
+    else if (d.tipo === "erro") {
+      S.enviando = false; DS.sel = null; DS.parcial = [];
+      vibrar("erro"); toast(d.msg, "erro");
+      if (S.estado) render();
+    }
     else if (d.tipo === "fatal") { S.fatal = true; telaErro(esc(d.msg)); }
   };
   ws.onclose = () => {

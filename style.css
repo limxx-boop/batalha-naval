@@ -218,3 +218,51 @@ button.b.fino { width: 100%; margin-top: 4px; }
   padding: 8px; background: #b45309; color: #fff;
 }
 .escondida { display: none; }
+
+/* ---------- damas ---------- */
+.dtab {
+  display: grid; grid-template-columns: repeat(8, 1fr);
+  border-radius: 14px; overflow: hidden; margin-bottom: 12px;
+  border: 4px solid #6b4423; box-shadow: 0 12px 30px rgba(0, 0, 0, .5);
+  font-size: min(5.4vw, 26px); touch-action: manipulation;
+}
+.dtab.ativo { border-color: #8a5a2e; box-shadow: 0 0 0 2px rgba(56, 189, 248, .35), 0 12px 30px rgba(0, 0, 0, .5); }
+.dcasa { aspect-ratio: 1; position: relative; display: flex; align-items: center; justify-content: center; }
+.dcasa.clara { background: #f0d9b5; }
+.dcasa.escura { background: #a97a52; }
+.dcasa.escura.rastro { background: #c8a24a; }
+.dcasa.escura.passo { background: #6aa35a; }
+.dcasa.alvo { cursor: pointer; }
+.dcasa.alvo::after {
+  content: ""; position: absolute; width: 30%; height: 30%; border-radius: 50%;
+  background: rgba(34, 197, 94, .9); box-shadow: 0 0 0 5px rgba(34, 197, 94, .3);
+  animation: alvo 1s ease-in-out infinite alternate;
+}
+@keyframes alvo { to { transform: scale(1.18); } }
+
+.pd {
+  width: 80%; height: 80%; border-radius: 50%; position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center; font-weight: 900;
+  transition: transform .15s, box-shadow .15s;
+}
+.pd::before {
+  content: ""; position: absolute; inset: 16%; border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, .12);
+}
+.pd.branca {
+  background: radial-gradient(circle at 35% 30%, #ffffff, #ece6d8 55%, #b8ad96);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .18), 0 3px 6px rgba(0, 0, 0, .45); color: #b45309;
+}
+.pd.preta {
+  background: radial-gradient(circle at 35% 30%, #707070, #2b2b2b 55%, #0b0b0b);
+  box-shadow: inset 0 -3px 0 rgba(255, 255, 255, .08), 0 3px 6px rgba(0, 0, 0, .6); color: #fbbf24;
+}
+.pd.preta::before { border-color: rgba(255, 255, 255, .12); }
+.pd.dama { text-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
+.pd.pode { cursor: pointer; box-shadow: 0 0 0 3px rgba(56, 189, 248, .95), 0 3px 8px rgba(0, 0, 0, .5); }
+.pd.selec { transform: scale(1.1); box-shadow: 0 0 0 3px #fbbf24, 0 0 18px rgba(251, 191, 36, .75); }
+.comida { color: rgba(153, 27, 27, .8); font-weight: 900; font-size: .9em; }
+.rl, .rc { position: absolute; font-size: 9px; font-weight: 800; color: rgba(90, 60, 30, .7); pointer-events: none; }
+.rl { left: 3px; top: 2px; }
+.rc { right: 3px; bottom: 1px; }
+.dcasa.escura .rl, .dcasa.escura .rc { color: rgba(255, 245, 230, .75); }
