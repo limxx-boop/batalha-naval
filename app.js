@@ -130,6 +130,9 @@ function desenharTab(o) {
   (o.tiros || []).forEach(([x, y, a]) => add(x, y, a ? "acerto" : "agua"));
   if (o.ultimo) add(o.ultimo.x, o.ultimo.y, "ultimo");
   (o.sel || []).forEach(([x, y]) => add(x, y, "sel"));
+  if (o.prev) o.prev.cels.forEach(([x, y]) => {
+    if (x >= 0 && y >= 0 && x < TAM && y < TAM) { add(x, y, "prev"); if (o.prev.ruim) add(x, y, "ruim"); }
+  });
 
   const cls = ["tab", o.pequeno && "pequeno", o.clicavel && "clicavel", o.ativo && "ativo"].filter(Boolean).join(" ");
   let h = `<div class="${cls}"${o.acao ? ` data-acao="${o.acao}"` : ""}><div class="coord"></div>`;
@@ -205,7 +208,23 @@ function telaEspera(e) {
 }
 
 function novoEditor(e) {
-  return { pecas: e.frota.map((n) => ({ nome: n.nome, tam: n.tam, pos: null })), sel: 0, h: true, chave: e.id };
+  return { pecas: e.frota.map((n) => ({ nome: n.nome, tam: n.tam, pos: null })), sel: 0, h: true, chave: e.id, prev: null };
+}
+
+/** Posição que o navio selecionado teria com a âncora em (x, y), já encaixada na borda. */
+function posPrevia(ed, x, y) {
+  const tam = ed.pecas[ed.sel].tam;
+  return { h: ed.h, x: ed.h ? Math.min(x, TAM - tam) : x, y: ed.h ? y : Math.min(y, TAM - tam) };
+}
+
+function previa(ed) {
+  if (ed.sel === null || !ed.prev || ed.pecas[ed.sel].pos) return null;
+  const pos = posPrevia(ed, ed.prev.x, ed.prev.y);
+  return {
+    pos,
+    cels: celulas(pos.x, pos.y, ed.pecas[ed.sel].tam, pos.h),
+    erro: conflito(ed.pecas, ed.sel, pos, S.estado.encostar),
+  };
 }
 
 function telaPosicionar(e) {
@@ -226,14 +245,19 @@ function telaPosicionar(e) {
   const ed = S.editor;
   const navios = ed.pecas.filter((p) => p.pos).map((p) => celulas(p.pos.x, p.pos.y, p.tam, p.pos.h));
   const todos = ed.pecas.every((p) => p.pos);
+  const pv = previa(ed);
+  let instrucao = "Escolha um navio e toque no mar. Toque num navio já colocado para tirá-lo.";
+  if (pv && pv.erro) instrucao = `<span style="color:#fb7185">❌ ${esc(pv.erro)} Toque em outro lugar ou gire.</span>`;
+  else if (pv) instrucao = `<span style="color:#34d399">👆 Toque de novo no navio verde para confirmar.</span>`;
   const pecas = ed.pecas.map((p, i) =>
     `<div class="peca${p.pos ? " ok" : ""}${i === ed.sel ? " sel" : ""}" data-b="peca" data-i="${i}">${blocos(p.tam)}${esc(p.nome)}</div>`).join("");
 
   return `<div class="status">🛠️ Posicione sua frota</div>
-    <div class="dica">Escolha um navio e toque no mar. Toque num navio já colocado para tirá-lo.
+    <div class="dica">${instrucao}
       ${e.encostar ? "" : "<br><b>Os navios não podem encostar, nem na diagonal.</b>"}</div>
     <div class="frota">${pecas}</div>
-    ${desenharTab({ navios, clicavel: true, ativo: true, acao: "posicionar" })}
+    ${desenharTab({ navios, clicavel: true, ativo: true, acao: "posicionar",
+      prev: pv ? { cels: pv.cels, ruim: !!pv.erro } : null })}
     <div class="botoes">
       <button class="b" data-b="girar">${ed.h ? "↔️ Deitado" : "↕️ Em pé"}</button>
       <button class="b" data-b="aleatorio">🎲 Sortear</button>
@@ -294,12 +318,52 @@ function telaFim(e) {
 
   const ordem = e.eu === null ? [0, 1] : [e.eu, 1 - e.eu];
   let h = `<div class="card resultado ${cls}"><div class="emoji">${emoji}</div><h2>${titulo}</h2><p>${motivo}</p></div>`;
+  if (e.eu !== null && e.jogadores.length === 2 && !e.proxima) {
+    const op = esc(e.jogadores[1 - e.eu].nome);
+    const eu = e.revanche.includes(e.eu), ele = e.revanche.includes(1 - e.eu);
+    if (ele && !eu) {
+      h += `<div class="card centro destaque"><h2>🔁 ${op} quer revanche!</h2>
+        <button class="b principal verde" data-b="revanche">✅ Aceitar revanche</button></div>`;
+    } else if (eu) {
+      h += `<div class="card centro"><p>⏳ Esperando ${op} aceitar a revanche…</p></div>`;
+    } else {
+      h += `<button class="b principal" data-b="revanche">🔁 Pedir revanche</button><div class="dica"></div>`;
+    }
+  }
   ordem.forEach((d) => {
     const tb = e.tabuleiros[d];
-    h += `<div class="rotulo"><span>Frota de ${nomeJog(e, d)}</span><span>${tb.restantes} navio(s) restante(s)</span></div>
+    h += `<div class="rotulo"><span>Frota de ${nomeJog(e, d)}</span><span>${tb.restantes} restante(s)</span></div>
       ${desenharTab({ navios: tb.navios, tiros: tb.tiros, afundados: tb.afundados })}`;
   });
   return h + `<button class="b fino" data-b="fechar">Fechar</button>`;
+}
+
+function telaBoasVindas() {
+  S.demo = null;
+  faixa(null);
+  $("#app").innerHTML = `
+    <div class="topo"><div><h1>Batalha Naval</h1><small>Acertou, joga de novo!</small></div><div class="chip">⚓</div></div>
+    <div class="card vip">
+      <h2>👑 Criar partidas é para usuários VIP</h2>
+      <p>Quem é VIP cria a partida no grupo com <b>/naval</b>. Não é VIP? Sem problema:
+        toque em <b>🎮 Abrir jogo</b> na mensagem da partida e entre para jogar!</p>
+    </div>
+    <div class="card">
+      <h2>📜 Como jogar</h2>
+      <p>1. Posicione sua frota no mar (dá para sortear).<br>
+         2. Na sua vez, toque no mar adversário para atirar.<br>
+         3. <b>Acertou? Joga de novo.</b> Errou? Passa a vez.<br>
+         4. Quem afundar todos os navios do outro primeiro vence.</p>
+      <p><b>Frota clássica:</b> 5 navios (5, 4, 3, 3 e 2 casas), podem encostar.<br>
+         <b>Frota brasileira:</b> 10 navios (5, 4, 3, 3, 2, 2, 1, 1, 1 e 1), com uma casa de água em volta.</p>
+      <p>⏱️ Ficou 3 minutos sem jogar? O adversário pode reivindicar a vitória.</p>
+    </div>
+    <div class="rotulo"><span>Treinar contra o robô</span></div>
+    <div class="botoes dois">
+      <button class="b" data-b="treino" data-modo="classica">⚓ Clássica</button>
+      <button class="b" data-b="treino" data-modo="brasileira">🚢 Brasileira</button>
+    </div>
+    <div class="dica">O treino não vale para o ranking.</div>`;
 }
 
 function telaErro(html) {
@@ -376,6 +440,23 @@ function receber(e) {
   }
   if (e.fase !== "posicionando") S.editor = null;
   render();
+
+  // Revanche criada: todo mundo que está vendo esta partida vai para a nova
+  if (e.proxima && (!antes || !antes.proxima)) {
+    vibrar("sucesso");
+    toast("🔁 Revanche começando!");
+    setTimeout(() => irPara(e.proxima), 900);
+  }
+}
+
+function irPara(id) {
+  if (S.demo) return S.demo.iniciar(S.demo.modo, true);
+  S.partida = id;
+  S.estado = null;
+  S.editor = null;
+  if (S.ws && S.ws.readyState === 1) {
+    S.ws.send(JSON.stringify({ tipo: "auth", initData: tg.initData, partida: id }));
+  }
 }
 
 // ---------------------------------------------------------------- toques
@@ -401,19 +482,27 @@ function acaoCelula(acao, x, y) {
     const achou = ed.pecas.findIndex((p) => p.pos &&
       celulas(p.pos.x, p.pos.y, p.tam, p.pos.h).some(([a, b]) => a === x && b === y));
     if (achou >= 0) {
-      ed.h = ed.pecas[achou].pos.h;
+      const antiga = ed.pecas[achou].pos;
+      ed.h = antiga.h;
       ed.pecas[achou].pos = null;
       ed.sel = achou;
+      ed.prev = { x: antiga.x, y: antiga.y };  // prévia onde ele estava
       vibrar("light");
       return render();
     }
     if (ed.sel === null || ed.pecas[ed.sel].pos) return toast("Escolha um navio na lista acima.");
-    const tam = ed.pecas[ed.sel].tam;
-    // Se passar da borda, encaixa automaticamente dentro do tabuleiro
-    const pos = { h: ed.h, x: ed.h ? Math.min(x, TAM - tam) : x, y: ed.h ? y : Math.min(y, TAM - tam) };
-    const erro = conflito(ed.pecas, ed.sel, pos, S.estado.encostar);
-    if (erro) { vibrar("erro"); return toast(erro, "erro"); }
-    ed.pecas[ed.sel].pos = pos;
+
+    // 1º toque mostra a prévia; tocar de novo dentro dela confirma
+    const pv = previa(ed);
+    const dentro = pv && pv.cels.some(([a, b]) => a === x && b === y);
+    if (!dentro) {
+      ed.prev = { x, y };
+      vibrar("light");
+      return render();
+    }
+    if (pv.erro) { vibrar("erro"); return toast(pv.erro, "erro"); }
+    ed.pecas[ed.sel].pos = pv.pos;
+    ed.prev = null;
     vibrar("medium");
     const prox = ed.pecas.findIndex((p) => !p.pos);
     ed.sel = prox >= 0 ? prox : null;
@@ -429,7 +518,10 @@ function botao(nome, ds) {
       return enviar({ tipo: "entrar" });
     case "peca": {
       const i = +ds.i;
-      if (ed.pecas[i].pos) { ed.h = ed.pecas[i].pos.h; ed.pecas[i].pos = null; }
+      if (ed.pecas[i].pos) {
+        const antiga = ed.pecas[i].pos;
+        ed.h = antiga.h; ed.pecas[i].pos = null; ed.prev = { x: antiga.x, y: antiga.y };
+      }
       ed.sel = i;
       return render();
     }
@@ -439,11 +531,13 @@ function botao(nome, ds) {
     case "aleatorio":
       sortear(ed.pecas, e.encostar);
       ed.sel = null;
+      ed.prev = null;
       vibrar("medium");
       return render();
     case "limpar":
       ed.pecas.forEach((p) => (p.pos = null));
       ed.sel = 0;
+      ed.prev = null;
       return render();
     case "pronto":
       if (!ed.pecas.every((p) => p.pos)) return;
@@ -454,7 +548,13 @@ function botao(nome, ds) {
     }
     case "reivindicar":
       return enviar({ tipo: "reivindicar" });
+    case "revanche":
+      vibrar("light");
+      return enviar({ tipo: "revanche" });
+    case "treino":
+      return Demo.iniciar(ds.modo);
     case "fechar":
+      if (S.demo) return telaBoasVindas();
       if (tg && tg.initData) tg.close();
       return;
   }
@@ -514,8 +614,8 @@ function iniciar() {
   if (q.has("demo")) return Demo.iniciar(q.get("demo"));
 
   const { id, sub } = lerParam();
-  if (!tg || !tg.initData) return telaErro("Abra este jogo pelo botão <b>Abrir jogo</b> da partida no Telegram.");
-  if (!id) return telaErro("Nenhuma partida informada. Abra pelo botão <b>Abrir jogo</b> da partida.");
+  // Aberto pelo perfil do bot (ou fora do Telegram): mostra regras, aviso VIP e treino
+  if (!id || !tg || !tg.initData) return telaBoasVindas();
   S.url = sub ? `wss://${sub}.trycloudflare.com/ws` : (window.CONFIG && CONFIG.SERVIDOR_PADRAO);
   if (!S.url) return telaErro("Endereço do servidor não configurado.");
   S.partida = id;
@@ -525,7 +625,7 @@ function iniciar() {
 // ---------------------------------------------------------------- modo demonstração (?demo)
 // Joga contra um robô sem precisar do bot ligado. Útil para testar o visual.
 const Demo = {
-  iniciar(modo) {
+  iniciar(modo, revanche) {
     const frotas = {
       classica: [["Porta-aviões", 5], ["Encouraçado", 4], ["Cruzador", 3], ["Submarino", 3], ["Destróier", 2]],
       brasileira: [["Porta-aviões", 5], ["Encouraçado", 4], ["Cruzador", 3], ["Cruzador", 3], ["Destróier", 2],
@@ -537,8 +637,12 @@ const Demo = {
     this.j = [{ nome: "Comandante", pronto: false, navios: [], tiros: new Map() },
               { nome: "Robô", pronto: false, navios: [], tiros: new Map() }];
     this.fase = "aguardando"; this.vez = 0; this.vencedor = null; this.motivo = null; this.ultimo = null;
+    this.revanche = []; this.proxima = null;
     S.demo = this;
-    faixa("Modo demonstração · jogando contra o robô");
+    S.estado = null;
+    S.editor = null;
+    faixa("Treino contra o robô · não vale para o ranking");
+    if (revanche) { this.fase = "posicionando"; this.publicar(); return this.roboPosiciona(); }
     this.publicar();
     setTimeout(() => { this.fase = "posicionando"; this.publicar(); this.roboPosiciona(); }, 1800);
   },
@@ -618,6 +722,10 @@ const Demo = {
       this.publicar();
     } else if (m.tipo === "atirar") {
       this.atirar(0, m.x, m.y);
+    } else if (m.tipo === "revanche") {
+      this.revanche = [0];
+      this.publicar();
+      setTimeout(() => { this.revanche = [0, 1]; this.proxima = "demo2"; this.publicar(); }, 1200);
     } else if (m.tipo === "desistir") {
       if (this.fase === "aguardando") this.fase = "cancelada";
       else { this.fase = "fim"; this.vencedor = 1; this.motivo = "desistiu"; }
@@ -642,6 +750,7 @@ const Demo = {
       jogadores: this.fase === "aguardando" ? [{ nome: "Comandante", pronto: false }] : this.j.map((j) => ({ nome: j.nome, pronto: j.pronto })),
       vez: this.vez, vencedor: this.vencedor, motivo: this.motivo, ultimo_tiro: this.ultimo,
       tabuleiros: this.fase === "aguardando" ? [] : [tab(0), tab(1)], reivindicar_em: null,
+      revanche: this.revanche, proxima: this.proxima,
     });
   },
 };

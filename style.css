@@ -129,6 +129,8 @@ main { max-width: 480px; margin: 0 auto; padding: 14px 14px 28px; }
 .cel.afundado { background: linear-gradient(180deg, #be123c, #7f1d1d) !important; border-color: rgba(244, 63, 94, .7); }
 .cel.afundado::after { content: "✕"; color: #fecdd3; font-weight: 900; }
 .cel.ultimo { animation: pulso 1.2s ease-out 2; z-index: 1; }
+.cel.prev { background: rgba(52, 211, 153, .42); border-color: #34d399; }
+.cel.prev.ruim { background: rgba(244, 63, 94, .42); border-color: #f43f5e; }
 .cel.sel { outline: 2px solid var(--amarelo); outline-offset: -2px; }
 .cel.revelado { opacity: .55; }
 
@@ -168,6 +170,12 @@ button.b.principal {
 button.b.verde { background: linear-gradient(135deg, #10b981, #0ea5e9); border: none; }
 button.b.perigo { background: transparent; color: #fb7185; border-color: rgba(244, 63, 94, .35); width: 100%; }
 button.b.fino { width: 100%; margin-top: 4px; }
+
+.botoes.dois { grid-template-columns: 1fr 1fr; }
+.card.vip { background: linear-gradient(135deg, rgba(251, 191, 36, .16), rgba(168, 85, 247, .16)); border-color: rgba(251, 191, 36, .45); }
+.card.vip h2 { color: #fcd34d; }
+.card.destaque { border-color: rgba(52, 211, 153, .6); box-shadow: 0 0 24px rgba(52, 211, 153, .2); }
+.card.destaque .b { margin-top: 8px; }
 
 .dica { font-size: 12px; color: var(--suave); text-align: center; margin: 6px 0 12px; }
 
