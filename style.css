@@ -266,3 +266,46 @@ button.b.fino { width: 100%; margin-top: 4px; }
 .rl { left: 3px; top: 2px; }
 .rc { right: 3px; bottom: 1px; }
 .dcasa.escura .rl, .dcasa.escura .rc { color: rgba(255, 245, 230, .75); }
+
+/* ---------- memória ---------- */
+.mtab {
+  display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 6px;
+  padding: 8px; border-radius: 18px; margin-bottom: 12px;
+  background: linear-gradient(180deg, rgba(30, 27, 75, .85), rgba(17, 24, 56, .85));
+  border: 1px solid var(--borda); touch-action: manipulation;
+}
+.mtab.ativo { border-color: rgba(56, 189, 248, .55); box-shadow: 0 0 24px rgba(56, 189, 248, .18); }
+.carta {
+  aspect-ratio: 3 / 4; border-radius: 10px; position: relative; perspective: 600px;
+  font-size: calc(min(88vw, 440px) / var(--cols) * .5);
+}
+.carta .face {
+  position: absolute; inset: 0; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .25), transparent 40%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, .07) 0 6px, transparent 6px 12px),
+    linear-gradient(135deg, #6366f1, #8b5cf6 55%, #a855f7);
+  border: 2px solid rgba(255, 255, 255, .18);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .35);
+  transition: transform .15s;
+}
+.carta.pode { cursor: pointer; }
+.carta.pode:active .face { transform: scale(.93); }
+.carta.virada .face {
+  background: linear-gradient(180deg, #ffffff, #e9eefb);
+  border-color: rgba(148, 163, 184, .6);
+}
+.carta.aberta .face { border-color: #fbbf24; box-shadow: 0 0 0 2px rgba(251, 191, 36, .45), 0 4px 10px rgba(0, 0, 0, .35); }
+.carta.errou .face { border-color: #f43f5e; box-shadow: 0 0 0 2px rgba(244, 63, 94, .5); animation: tremer .35s; }
+.carta.dono.d0 .face { border-color: #38bdf8; box-shadow: inset 0 0 0 2px rgba(56, 189, 248, .35); }
+.carta.dono.d1 .face { border-color: #fb923c; box-shadow: inset 0 0 0 2px rgba(251, 146, 60, .35); }
+.carta.recente .face { animation: virar-carta .35s ease-out; }
+.carta.fechando .face { animation: virar-carta .3s ease-out; }
+@keyframes virar-carta { from { transform: rotateY(90deg); } to { transform: rotateY(0); } }
+@keyframes tremer { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.ponto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
+.ponto.d0 { background: #38bdf8; }
+.ponto.d1 { background: #fb923c; }
+.carta .face img.fig { width: 86%; height: 86%; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+.evento .mini img.fig { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; }

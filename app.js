@@ -335,7 +335,7 @@ function telaBoasVindas() {
     <div class="topo"><div><h1>Jogos</h1><small>Desafie alguém do grupo!</small></div><div class="chip">🎮</div></div>
     <div class="card vip">
       <h2>👑 Criar partidas é para usuários VIP</h2>
-      <p>Quem é VIP cria a partida no grupo com <b>/naval</b> ou <b>/damas</b>. Não é VIP? Sem problema:
+      <p>Quem é VIP cria a partida no grupo com <b>/naval</b>, <b>/damas</b> ou <b>/memoria</b>. Não é VIP? Sem problema:
         toque em <b>🎮 Abrir jogo</b> na mensagem da partida e entre para jogar!</p>
     </div>
     <div class="card">
@@ -360,7 +360,19 @@ function telaBoasVindas() {
          • Empate por acordo ou com 20 lances seguidos só de damas, sem captura.</p>
       <button class="b fino" data-b="treino_damas">🤖 Treinar damas</button>
     </div>
-    <div class="dica">⏱️ Ficou sem jogar (3 min na Batalha Naval, 5 min nas Damas)? O adversário pode reivindicar a vitória.<br>
+    <div class="card">
+      <h2>🧠 Jogo da Memória</h2>
+      <p>• Na sua vez, vire 2 cartas.<br>
+         • <b>Formou par? É seu e você joga de novo.</b><br>
+         • Errou? As cartas viram de volta e a vez passa.<br>
+         • Quem fizer mais pares vence.</p>
+      <div class="botoes">
+        <button class="b" data-b="treino_memoria" data-modo="facil">🟢 Fácil</button>
+        <button class="b" data-b="treino_memoria" data-modo="medio">🟡 Médio</button>
+        <button class="b" data-b="treino_memoria" data-modo="dificil">🔴 Difícil</button>
+      </div>
+    </div>
+    <div class="dica">⏱️ Ficou sem jogar (3 min na Batalha Naval, 5 min nas Damas, 2 min na Memória)? O adversário pode reivindicar a vitória.<br>
       O treino contra o robô não vale para o ranking.</div>`;
 }
 
@@ -387,6 +399,11 @@ function render() {
   if (!e) return;
   if (e.jogo === "damas") {
     $("#app").innerHTML = telaDamas(e);
+    return atualizarRelogio();
+  }
+  if (e.jogo === "memoria") {
+    $("#app").innerHTML = telaMemoria(e);
+    MS.vistas = new Set(e.cartas.map((c, i) => (c.s ? i : -1)).filter((i) => i >= 0));
     return atualizarRelogio();
   }
   let h = topo(e);
@@ -433,6 +450,9 @@ function receber(e) {
   if (e.jogo === "damas") {
     if (!antes || antes.versao !== e.versao || antes.id !== e.id) { DS.sel = null; DS.parcial = []; }
     if (antes && antes.id === e.id) feedbackDamas(antes, e);
+  } else if (e.jogo === "memoria") {
+    if (!antes || antes.id !== e.id) MS.vistas = new Set();
+    else feedbackMemoria(antes, e);
   } else if (antes) {
     const t = e.ultimo_tiro;
     if (t && JSON.stringify(t) !== JSON.stringify(antes.ultimo_tiro)) {
@@ -573,6 +593,8 @@ function botao(nome, ds) {
       return Demo.iniciar(ds.modo);
     case "treino_damas":
       return DemoDamas.iniciar();
+    case "treino_memoria":
+      return DemoMemoria.iniciar(ds.modo);
     case "empate":
       return confirmar("Propor empate ao adversário?", () => enviar({ tipo: "empate" }));
     case "aceitar_empate":
@@ -587,6 +609,8 @@ function botao(nome, ds) {
 }
 
 document.addEventListener("click", (ev) => {
+  const carta = ev.target.closest(".carta");
+  if (carta && carta.closest(".mtab")) return tocarMemoria(+carta.dataset.i);
   const casa = ev.target.closest(".dcasa");
   if (casa && casa.closest(".dtab")) return tocarDamas(+casa.dataset.x, +casa.dataset.y);
   const cel = ev.target.closest(".cel");
@@ -873,6 +897,7 @@ const DemoDamas = {
   },
   roboJoga() {
     setTimeout(() => {
+      if (S.demo !== this || this.fase !== "jogando" || this.vez !== 1) return;
       const ms = this.movs();
       if (!ms.length) return;
       // Prefere virar dama; fora isso, sorteia
@@ -910,6 +935,259 @@ const DemoDamas = {
       ultimo: this.ultimo,
       pecas: [Damas.contar(this.t, 0), Damas.contar(this.t, 1)],
       empate_proposto: this.empate, lances_damas: this.lancesDamas, limite_lances_damas: 20,
+      reivindicar_em: null, revanche: this.revanche, proxima: this.proxima,
+    });
+  },
+};
+
+// ================================================================ MEMÓRIA
+const MS = { vistas: new Set(), precarregadas: "" };   // cartas viradas no último desenho
+
+/** Endereço http(s) do servidor do jogo (mesmo do WebSocket). */
+function baseServidor() {
+  return (S.url || "").replace(/^ws/, "http").replace(/\/ws$/, "");
+}
+
+/** Conteúdo da carta: emoji ou figurinha do pack. */
+function figura(e, s) {
+  if (!s) return "";
+  if (s.startsWith("img:")) {
+    return `<img class="fig" src="${baseServidor()}/img/${e.id}/${encodeURIComponent(s.slice(4))}" alt="" draggable="false">`;
+  }
+  return s;
+}
+
+/** Baixa as figurinhas do pack logo no começo, para a carta virar sem atraso. */
+function precarregar(e) {
+  if (!e.imagens || !e.imagens.length || MS.precarregadas === e.id) return;
+  MS.precarregadas = e.id;
+  e.imagens.forEach((k) => { const img = new Image(); img.src = `${baseServidor()}/img/${e.id}/${encodeURIComponent(k)}`; });
+}
+
+function telaMemoria(e) {
+  precarregar(e);
+  const pack = e.pack ? ` · 🖼️ ${esc(e.pack.titulo)}` : "";
+  let h = `<div class="topo"><div><h1>Memória</h1><small>${esc(e.modo_nome)} · ${e.pares} pares${pack}</small></div><div class="chip">🧠 Memória</div></div>`;
+
+  if (e.fase === "aguardando") {
+    h += `<div class="card centro"><div class="radar"><span></span></div><h2>Aguardando adversário</h2>`;
+    if (e.papel === "pode_entrar") {
+      h += `<p><b>${esc(e.jogadores[0].nome)}</b> está procurando alguém para jogar.</p></div>
+        <button class="b principal" data-b="entrar">🧠 Entrar na partida</button><div class="dica">Quem começa é sorteado.</div>`;
+    } else {
+      h += `<p>Quem tocar em <b>Abrir jogo</b> na mensagem da partida entra para jogar contra você.</p></div>`;
+    }
+    if (e.eu === 0) h += `<button class="b perigo" data-b="desistir">Cancelar partida</button>`;
+    return h;
+  }
+  if (e.fase === "cancelada") {
+    return h + `<div class="card centro"><div style="font-size:44px">❌</div><h2>Partida cancelada</h2>
+      <p>Crie outra com /memoria.</p></div><button class="b fino" data-b="fechar">Fechar</button>`;
+  }
+
+  // placar de pares
+  const linha = (i) => {
+    const j = e.jogadores[i];
+    const vez = e.fase === "jogando" && e.vez === i ? " vez" : "";
+    let s = `<span class="ponto d${i}"></span> ${e.placar[i]} par(es)`;
+    if (e.fase === "fim" && e.vencedor === i) s = `🏆 Venceu · ${e.placar[i]} par(es)`;
+    return `<div class="jog${vez}${i === 1 ? " dir" : ""}"><div class="n">${nomeJog(e, i)}</div><div class="s">${s}</div></div>`;
+  };
+  h += `<div class="placar">${linha(0)}<div class="vs">VS</div>${linha(1)}</div>`;
+
+  const jogador = e.eu !== null;
+  const minha = jogador && e.vez === e.eu && e.fase === "jogando";
+  if (e.fase === "jogando") {
+    const abertas = e.cartas.filter((c) => c.aberta).length;
+    if (!jogador) h += `<div class="status espera">👀 Assistindo · vez de ${esc(e.jogadores[e.vez].nome)}</div>`;
+    else if (minha && e.esperando) h += `<div class="status espera">😬 Não foi dessa vez…</div>`;
+    else if (minha) h += `<div class="status minha">🎯 Sua vez! ${abertas ? "Vire a 2ª carta" : "Vire 2 cartas"}</div>`;
+    else h += `<div class="status espera">⏳ Vez de ${esc(e.jogadores[e.vez].nome)}</div>`;
+
+    const u = e.ultimo;
+    let ev = "";
+    if (u) {
+      const quem = u.por === e.eu ? "Você" : esc(e.jogadores[u.por].nome);
+      const simb = u.simbolo && u.simbolo.startsWith("img:") ? `<span class="mini">${figura(e, u.simbolo)}</span>` : u.simbolo;
+      ev = u.acertou ? `✨ ${quem} formou um par ${simb}` : `❌ ${quem} errou`;
+    }
+    h += `<div class="evento">${ev}</div>`;
+  } else {
+    let emoji = "🏆", titulo, cls = "";
+    if (e.vencedor === null) {
+      const empate = e.motivo === "empate_pares";
+      emoji = empate ? "🤝" : "💤"; titulo = empate ? "Empate" : "Partida encerrada";
+    } else if (e.eu === e.vencedor) { titulo = "Vitória!"; cls = "vitoria"; }
+    else if (e.eu !== null) { emoji = "💥"; titulo = "Derrota"; cls = "derrota"; }
+    else titulo = `${esc(e.jogadores[e.vencedor].nome)} venceu!`;
+    const perd = e.vencedor === null ? "" : esc(e.jogadores[1 - e.vencedor].nome);
+    const motivo = {
+      mais_pares: `Placar: ${Math.max(...e.placar)} × ${Math.min(...e.placar)} pares`,
+      empate_pares: `Os dois fizeram ${e.placar[0]} pares.`,
+      desistiu: `${perd} desistiu.`,
+      tempo: `${perd} ficou sem jogar.`,
+      abandonada: "Ninguém jogou por 30 minutos.",
+    }[e.motivo] || "";
+    h += `<div class="card resultado ${cls}"><div class="emoji">${emoji}</div><h2>${titulo}</h2><p>${motivo}</p></div>`;
+    h += blocoRevanche(e);
+  }
+
+  // cartas
+  const ativo = minha && !e.esperando && !S.enviando;
+  h += `<div class="mtab${ativo ? " ativo" : ""}" style="--cols:${e.colunas}">`;
+  e.cartas.forEach((c, i) => {
+    const cls = ["carta"];
+    if (c.s) cls.push("virada");
+    if (c.s && !MS.vistas.has(i)) cls.push("recente");
+    if (!c.s && MS.vistas.has(i)) cls.push("fechando");
+    if (c.dono !== null) cls.push("dono", "d" + c.dono);
+    if (c.aberta) cls.push("aberta");
+    if (c.aberta && e.esperando) cls.push("errou");
+    if (ativo && !c.s) cls.push("pode");
+    h += `<div class="${cls.join(" ")}" data-i="${i}"><div class="face">${figura(e, c.s)}</div></div>`;
+  });
+  h += `</div>`;
+
+  if (e.fase === "jogando") {
+    h += `<div id="relogio"></div>`;
+    if (jogador) h += `<button class="b perigo" data-b="desistir">🏳️ Desistir</button>`;
+  } else {
+    h += `<button class="b fino" data-b="fechar">Fechar</button>`;
+  }
+  return h;
+}
+
+function tocarMemoria(i) {
+  const e = S.estado;
+  if (!e || e.jogo !== "memoria" || e.fase !== "jogando" || e.eu === null) return;
+  if (e.vez !== e.eu) return toast("Ainda não é a sua vez.");
+  if (e.esperando || S.enviando || e.cartas[i].s) return;
+  S.enviando = true;
+  vibrar("light");
+  enviar({ tipo: "virar", i });
+}
+
+function feedbackMemoria(antes, e) {
+  const u = e.ultimo;
+  if (u && JSON.stringify(u) !== JSON.stringify(antes.ultimo) && e.eu !== null) {
+    if (u.por === e.eu) vibrar(u.acertou ? "sucesso" : "erro");
+    else if (u.acertou) vibrar("aviso");
+  }
+  if (antes.fase !== e.fase) {
+    if (e.fase === "jogando") {
+      vibrar("sucesso");
+      toast(e.eu === null ? "🧠 A partida começou!" : e.vez === e.eu ? "🧠 Você começa!" : `🧠 ${e.jogadores[e.vez].nome} começa.`);
+    }
+    if (e.fase === "fim" && e.eu !== null) vibrar(e.vencedor === e.eu ? "sucesso" : e.vencedor === null ? "aviso" : "erro");
+  } else if (e.fase === "jogando" && antes.vez !== e.vez && e.vez === e.eu) {
+    vibrar("medium");
+  }
+}
+
+// ---------------------------------------------------------------- treino da memória contra o robô
+const DemoMemoria = {
+  SIMBOLOS: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
+    "🐧", "🦉", "🦄", "🐝", "🦋", "🐢", "🐙", "🦀", "🐬", "🐳", "🍎", "🍓", "🍉", "⭐"],
+  iniciar(modo, revanche) {
+    const tamanhos = { facil: [8, 4, "Fácil"], medio: [12, 4, "Médio"], dificil: [18, 6, "Difícil"] };
+    this.modo = tamanhos[modo] ? modo : "facil";
+    const [pares, colunas, nome] = tamanhos[this.modo];
+    Object.assign(this, { pares, colunas, nome });
+    const simb = this.SIMBOLOS.slice().sort(() => Math.random() - 0.5).slice(0, pares);
+    this.cartas = simb.concat(simb).sort(() => Math.random() - 0.5);
+    this.dono = this.cartas.map(() => null);
+    this.abertas = []; this.esperando = false; this.ultimo = null;
+    this.memoria = new Map();   // o que o robô lembra: índice -> símbolo
+    this.jogadores = [{ nome: "Comandante" }, { nome: "Robô" }];
+    this.vez = revanche ? 1 - (this.primeiro || 0) : (Math.random() < 0.5 ? 0 : 1);
+    this.primeiro = this.vez;
+    this.fase = "jogando"; this.vencedor = null; this.motivo = null; this.revanche = []; this.proxima = null;
+    S.demo = this; S.estado = null; MS.vistas = new Set();
+    faixa("Treino contra o robô · não vale para o ranking");
+    this.publicar();
+    if (this.vez === 1) this.roboJoga();
+  },
+  placar() { return [0, 1].map((i) => this.dono.filter((d) => d === i).length / 2); },
+  lembrar(k) { if (Math.random() < 0.5) this.memoria.set(k, this.cartas[k]); },  // robô lembra metade do que vê
+  virar(i, k) {
+    if (this.fase !== "jogando" || this.vez !== i || this.esperando || this.dono[k] !== null || this.abertas.includes(k)) return;
+    this.abertas.push(k);
+    this.lembrar(k);
+    if (this.abertas.length === 2) {
+      const [a, b] = this.abertas, acertou = this.cartas[a] === this.cartas[b];
+      this.ultimo = { por: i, a, b, acertou, simbolo: this.cartas[a] };
+      if (acertou) {
+        this.dono[a] = this.dono[b] = i; this.abertas = [];
+        this.memoria.delete(a); this.memoria.delete(b);
+        if (this.dono.every((d) => d !== null)) {
+          const p = this.placar();
+          this.fase = "fim";
+          this.vencedor = p[0] === p[1] ? null : p[0] > p[1] ? 0 : 1;
+          this.motivo = p[0] === p[1] ? "empate_pares" : "mais_pares";
+        }
+        this.publicar();
+        if (this.fase === "jogando" && this.vez === 1) this.roboJoga();
+        return;
+      }
+      this.esperando = true;
+      this.publicar();
+      setTimeout(() => {
+        if (S.demo !== this) return;
+        this.abertas = []; this.esperando = false; this.vez = 1 - this.vez;
+        this.publicar();
+        if (this.fase === "jogando" && this.vez === 1) this.roboJoga();
+      }, 1800);
+      return;
+    }
+    this.publicar();
+  },
+  roboJoga() {
+    const livres = () => this.cartas.map((_, k) => k).filter((k) => this.dono[k] === null && !this.abertas.includes(k));
+    const sorteia = (lista) => lista[Math.floor(Math.random() * lista.length)];
+    const desconhecidas = () => livres().filter((k) => !this.memoria.has(k));
+    // 1) já conhece um par inteiro?
+    let a = null, b = null;
+    const vistos = {};
+    for (const [k, s] of this.memoria) {
+      if (this.dono[k] !== null) continue;
+      if (vistos[s] !== undefined) { a = vistos[s]; b = k; break; }
+      vistos[s] = k;
+    }
+    setTimeout(() => {
+      if (S.demo !== this || this.fase !== "jogando" || this.vez !== 1) return;
+      if (a === null) a = sorteia(desconhecidas().length ? desconhecidas() : livres());
+      this.virar(1, a);
+      setTimeout(() => {
+        if (this.fase !== "jogando" || this.vez !== 1 || this.abertas.length !== 1) return;
+        if (b === null) {
+          const par = [...this.memoria].find(([k, s]) => k !== a && s === this.cartas[a] && this.dono[k] === null);
+          const resto = livres().filter((k) => k !== a);
+          const novas = resto.filter((k) => !this.memoria.has(k));
+          b = par ? par[0] : sorteia(novas.length ? novas : resto);
+        }
+        this.virar(1, b);
+      }, 900);
+    }, 900);
+  },
+  receber(m) {
+    if (m.tipo === "virar") this.virar(0, m.i);
+    else if (m.tipo === "desistir") { this.fase = "fim"; this.vencedor = 1; this.motivo = "desistiu"; this.publicar(); }
+    else if (m.tipo === "revanche") {
+      this.revanche = [0]; this.publicar();
+      setTimeout(() => { this.revanche = [0, 1]; this.proxima = "demo2"; this.publicar(); }, 1000);
+    }
+  },
+  publicar() {
+    const fim = this.fase === "fim";
+    receber({
+      jogo: "memoria", id: "demo-memoria", versao: Date.now() + Math.random(), agora: Date.now() / 1000,
+      modo: this.modo, modo_nome: this.nome, fase: this.fase, papel: "jogador", eu: 0,
+      jogadores: this.jogadores, vez: this.vez, vencedor: this.vencedor, motivo: this.motivo,
+      pares: this.pares, colunas: this.colunas, placar: this.placar(), ultimo: this.ultimo, esperando: this.esperando,
+      cartas: this.cartas.map((s, k) => ({
+        s: this.dono[k] !== null || this.abertas.includes(k) || fim ? s : null,
+        dono: this.dono[k], aberta: this.abertas.includes(k),
+      })),
       reivindicar_em: null, revanche: this.revanche, proxima: this.proxima,
     });
   },
@@ -997,6 +1275,7 @@ const Demo = {
   },
   roboPosiciona() {
     setTimeout(() => {
+      if (S.demo !== this || this.fase !== "posicionando") return;
       const pecas = this.frota.map((n) => ({ ...n, pos: null }));
       sortear(pecas, this.encostar);
       this.j[1].navios = pecas.map((p) => celulas(p.pos.x, p.pos.y, p.tam, p.pos.h));
@@ -1044,6 +1323,7 @@ const Demo = {
   },
   roboAtira() {
     setTimeout(() => {
+      if (S.demo !== this || this.fase !== "batalha" || this.vez !== 1) return;
       const t = this.j[1].tiros;
       // Caça: tenta os vizinhos de acertos que ainda não afundaram
       const afund = new Set(this.afundados(0).flatMap((n) => n.cels.map(([a, b]) => a + "," + b)));
